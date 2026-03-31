@@ -137,8 +137,7 @@ docker compose ps
 # heretek-postgres          Up (healthy)    127.0.0.1:5432->5432/tcp
 # heretek-redis             Up (healthy)    127.0.0.1:6379->6379/tcp
 # heretek-ollama            Up              127.0.0.1:11434->11434/tcp
-# heretek-websocket-bridge  Up (healthy)    127.0.0.1:3002-3003->3002-3003/tcp
-# heretek-web               Up              0.0.0.0:3000->3000/tcp
+# heretek-langfuse          Up (healthy)    0.0.0.0:3000->3000/tcp
 ```
 
 ### Verify Service Health
@@ -339,32 +338,17 @@ Output should show:
 
 ---
 
-## Step 8: Start Services
+## Step 8: Access Langfuse Dashboard
 
-### Start Dashboard
-
-```bash
-cd dashboard
-export WORKSPACE_DIR=/root/.openclaw/agents
-export OPENCLAW_DIR=/root/.openclaw
-export DASHBOARD_PORT=7000
-node server.js &
-
-# Verify Dashboard
-curl http://localhost:7000/health
-```
-
-### Start ClawBridge (Mobile Interface)
+The Langfuse observability dashboard is already running as part of the Docker Compose stack.
 
 ```bash
-cd ../clawbridge
-export PORT=3001
-export ACCESS_KEY="heretek-clawbridge-key-2026"
-export OPENCLAW_WORKSPACE=/root/.openclaw/agents
-node index.js &
+# Access Langfuse dashboard
+open http://localhost:3000
 
-# Verify ClawBridge
-curl http://localhost:3001/health
+# Default credentials (set in .env):
+# Username: admin
+# Password: Check your LANGFUSE credentials in .env
 ```
 
 ---
@@ -381,8 +365,8 @@ openclaw gateway status
 # Gateway: Running
 # Version: v2026.3.28
 # Agents: 12 configured
-# Plugins: 2 Heretek + N ClawHub
-# Skills: 5 Heretek + M ClawHub
+# Plugins: 2 Heretek plugins
+# Skills: 5 Heretek skills
 ```
 
 ### Agent Health Check
@@ -427,10 +411,9 @@ openclaw plugin test openclaw-liberation-plugin
 
 | Interface | URL | Port | Description |
 |-----------|-----|------|-------------|
-| **Dashboard** | http://localhost:7000 | 7000 | Real-time agent monitoring |
-| **ClawBridge** | http://localhost:3001 | 3001 | Mobile-optimized interface |
+| **Langfuse** | http://localhost:3000 | 3000 | LLM observability dashboard |
 | **LiteLLM** | http://localhost:4000 | 4000 | Model API gateway |
-| **Web Interface** | http://localhost:3000 | 3000 | SvelteKit dashboard |
+| **OpenClaw Gateway** | ws://localhost:18789 | 18789 | Agent management via WebSocket |
 
 ---
 
@@ -534,22 +517,6 @@ docker compose restart ollama
 docker compose ps ollama
 ```
 
-### Issue: Web Container Unhealthy
-
-**Symptom:** `docker compose ps` shows web as unhealthy
-
-**Solution:**
-```bash
-# Check web logs
-docker compose logs web
-
-# Rebuild web container
-cd web-interface
-npm install
-npm run build
-cd ..
-docker compose restart web
-```
 
 ### Issue: LiteLLM Configuration Not Loading
 
@@ -630,11 +597,11 @@ ls -la openclaw-backup-*.tar.gz
 
 After successful deployment:
 
-1. **Review Dashboard** - Access http://localhost:7000 to monitor agents
-2. **Test Agent Communication** - Send a message through the Dashboard
+1. **Access Langfuse Dashboard** - Access http://localhost:3000 to monitor agent traces
+2. **Test Agent Communication** - Send messages via Gateway WebSocket RPC
 3. **Configure User Profiles** - Set up user rolodex with `./skills/user-rolodex/user-rolodex.sh`
-4. **Enable Autonomous Operations** - Activate thought-loop and dreamer agent
-5. **Review Documentation** - See [`docs/plans/`](../../plans/) for advanced configuration
+4. **Enable Autonomous Operations** - Activate dreamer agent for overnight consolidation
+5. **Review Documentation** - See [`docs/`](../../docs/) for advanced configuration
 
 ---
 
