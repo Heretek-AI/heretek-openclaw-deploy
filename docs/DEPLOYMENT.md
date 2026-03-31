@@ -520,6 +520,69 @@ docker compose exec litellm \
 
 ---
 
+## External Integrations
+
+This section covers external projects and services that integrate with Heretek OpenClaw.
+
+### Dashboard Options
+
+| Dashboard | Type | Access | Auth | Best For |
+|-----------|------|--------|------|----------|
+| **[OpenClaw Dashboard](../EXTERNAL_PROJECTS.md#openclaw-dashboard)** | Third-party | localhost/Tailscale | Username+Password+TOTP | Full-featured monitoring |
+| **[ClawBridge](../EXTERNAL_PROJECTS.md#clawbridge)** | Official | Mobile/VPN/Tunnel | Access Key | Mobile-first, remote access |
+
+### Plugin Extensions
+
+| Plugin | Source | Purpose | Security Level |
+|--------|--------|---------|----------------|
+| **[skill-git-official](../EXTERNAL_PROJECTS.md#skill-git-official)** | ClawHub | Skill version control | ⚠️ Review before install |
+| **[episodic-claw](../EXTERNAL_PROJECTS.md#episodic-claw)** | ClawHub | Episodic memory | ⚠️ Native binary download |
+| **[SwarmClaw](../EXTERNAL_PROJECTS.md#swarmclaw)** | External | Swarm coordination | ✅ MIT licensed |
+
+### Observability
+
+| Service | Type | Purpose |
+|---------|------|---------|
+| **[Langfuse](../operations/LANGFUSE_OBSERVABILITY.md)** | Self-hosted | A2A tracing, cost tracking, analytics |
+
+### Quick Install Commands
+
+```bash
+# OpenClaw Dashboard (full-featured monitoring)
+git clone https://github.com/tugcantopaloglu/openclaw-dashboard.git
+cd openclaw-dashboard && node server.js
+
+# ClawBridge (mobile-first dashboard)
+curl -sL https://clawbridge.app/install.sh | bash
+
+# skill-git-official (skill version control)
+openclaw bundles install clawhub:skill-git-official
+
+# episodic-claw (long-term memory)
+openclaw plugins install clawhub:episodic-claw
+
+# SwarmClaw (external control plane)
+curl -fsSL https://swarmclaw.ai/install.sh | bash
+```
+
+### Security Considerations
+
+| Project | Risk Level | Notes |
+|---------|------------|-------|
+| OpenClaw Dashboard | ✅ Low | PBKDF2 hashing, TOTP MFA, local-only by default |
+| ClawBridge | ✅ Low | MIT licensed, Cloudflare tunnel, access key auth |
+| skill-git-official | ⚠️ Medium | Contains prompt-injection patterns, broad filesystem access |
+| episodic-claw | ⚠️ Medium | Downloads native Go binary, external API calls |
+| SwarmClaw | ✅ Low | MIT licensed, 17 provider support |
+
+**Recommendations:**
+- Review [`EXTERNAL_PROJECTS.md`](../EXTERNAL_PROJECTS.md) for detailed security information
+- Test external plugins in sandbox environment before production use
+- Verify all external binaries before execution
+- Keep secrets out of skill files before version control operations
+
+---
+
 ## References
 
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) - System architecture
