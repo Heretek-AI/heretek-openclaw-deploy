@@ -1,0 +1,128 @@
+name: Heretek Deployment Validation
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  triad-validation:
+    name: Triad Deliberation Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Run Triad Consensus Validation
+        run: |
+          echo "🔺 Running Triad Deliberation Check..."
+          ./scripts/triad-validate.sh
+        shell: bash
+      
+      - name: Consciousness Regression Tests
+        run: |
+          echo "🧠 Running Consciousness Regression Tests..."
+          npm run test:consciousness || ./scripts/consciousness-tests.sh
+        shell: bash
+
+  test:
+    name: Test Suite
+    needs: triad-validation
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run tests with coverage
+        run: npm run test:coverage
+      
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage/lcov.info
+          flags: heretek-core
+
+  build:
+    name: Build & Validate
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Build Docker images
+        run: |
+          docker compose build
+        shell: bash
+      
+      - name: Validate Docker Compose
+        run: |
+          docker compose config --quiet
+        shell: bash
+
+  deploy:
+    name: Deploy to Production
+    needs: [triad-validation, test, build]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Deploy to production
+        run: |
+          echo "🚀 Deploying to production..."
+          ./scripts/deploy.sh
+        shell: bash
+        env:
+          DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
+      
+      - name: Notify Triad of Deployment
+        run: |
+          echo "📢 Notifying Triad of deployment completion..."
+          ./scripts/notify-triad-deploy.sh
+        shell: bash
+        env:
+          GATEWAY_URL: ${{ secrets.GATEWAY_URL }}
+          GATEWAY_TOKEN: ${{ secrets.GATEWAY_TOKEN }}
+      
+      - name: Health Check
+        run: |
+          echo "⏳ Waiting for deployment to stabilize..."
+          sleep 30
+          curl -f ${{ secrets.GATEWAY_URL }}/health || exit 1
+        shell: bash
