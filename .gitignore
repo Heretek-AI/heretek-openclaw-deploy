@@ -1,0 +1,11 @@
+.env
+.env.local
+node_modules/
+**/node_modules/*
+*.log
+dist/
+build/
+coverage/
+artifacts/
+.tmp/
+.cache/
