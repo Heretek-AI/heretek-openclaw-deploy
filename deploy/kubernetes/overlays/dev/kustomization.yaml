@@ -1,0 +1,127 @@
+# ==============================================================================
+# Heretek OpenClaw - Development Overlay
+# ==============================================================================
+# Kustomization overlay for development environment
+# ==============================================================================
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: openclaw-dev
+
+namePrefix: dev-
+
+resources:
+  - ../../base
+
+commonLabels:
+  environment: dev
+
+# Development-specific patches
+patches:
+  # Reduce Gateway replicas for dev
+  - target:
+      kind: Deployment
+      name: openclaw-gateway
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "500m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "1Gi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "1000m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "2Gi"
+
+  # Reduce LiteLLM replicas for dev
+  - target:
+      kind: Deployment
+      name: litellm
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "250m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "512Mi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "500m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "1Gi"
+
+  # Reduce PostgreSQL storage for dev
+  - target:
+      kind: StatefulSet
+      name: postgresql
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "500m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "1Gi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "1000m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "2Gi"
+
+  # Reduce Redis storage for dev
+  - target:
+      kind: StatefulSet
+      name: redis
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "100m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "128Mi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "250m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "256Mi"
+
+# ConfigMapGenerator for environment-specific configuration
+configMapGenerator:
+  - name: openclaw-config
+    literals:
+      - ENVIRONMENT=dev
+      - LOG_LEVEL=debug
+      - ENABLE_PROFILING=true
+
+# SecretGenerator for development secrets
+secretGenerator:
+  - name: openclaw-secrets
+    literals:
+      - database-url=postgresql://openclaw:devpassword@dev-postgresql:5432/openclaw
+      - redis-url=redis://:devredis@dev-redis:6379/0
+      - postgres-password=devpassword
+      - redis-password=devredis
+      - litellm-master-key=dev-master-key-change-in-production
+      - litellm-salt-key=dev-salt-key-change-in-production
+      - minimax-api-key=your-minimax-api-key
+      - zai-api-key=your-zai-api-key
+    behavior: replace
+
+# Image overrides for development
+images:
+  - name: heretek/openclaw-gateway
+    newTag: 2026.3.28
+  - name: ghcr.io/berriai/litellm
+    newTag: main-latest

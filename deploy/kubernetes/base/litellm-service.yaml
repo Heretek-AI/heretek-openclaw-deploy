@@ -1,0 +1,48 @@
+# ==============================================================================
+# Heretek OpenClaw - LiteLLM Proxy Service
+# ==============================================================================
+# Base service configuration for LiteLLM proxy
+# ==============================================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: litellm
+  namespace: openclaw
+  labels:
+    app.kubernetes.io/name: litellm
+    app.kubernetes.io/component: proxy
+    app.kubernetes.io/part-of: openclaw
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 4000
+      targetPort: http
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: litellm
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: litellm
+  namespace: openclaw
+  labels:
+    app.kubernetes.io/name: litellm
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+spec:
+  rules:
+    - host: litellm.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: litellm
+                port:
+                  number: 4000

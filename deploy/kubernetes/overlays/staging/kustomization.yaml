@@ -1,0 +1,127 @@
+# ==============================================================================
+# Heretek OpenClaw - Staging Overlay
+# ==============================================================================
+# Kustomization overlay for staging environment
+# ==============================================================================
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: openclaw-staging
+
+namePrefix: staging-
+
+resources:
+  - ../../base
+
+commonLabels:
+  environment: staging
+
+# Staging-specific patches
+patches:
+  # Gateway configuration for staging
+  - target:
+      kind: Deployment
+      name: openclaw-gateway
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 2
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "1000m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "2Gi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "2000m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "4Gi"
+
+  # LiteLLM configuration for staging
+  - target:
+      kind: Deployment
+      name: litellm
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 2
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "500m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "1Gi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "1000m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "2Gi"
+
+  # PostgreSQL configuration for staging
+  - target:
+      kind: StatefulSet
+      name: postgresql
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "1000m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "2Gi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "2000m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "4Gi"
+
+  # Redis configuration for staging
+  - target:
+      kind: StatefulSet
+      name: redis
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "250m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "256Mi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "500m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "512Mi"
+
+# ConfigMapGenerator for staging configuration
+configMapGenerator:
+  - name: openclaw-config
+    literals:
+      - ENVIRONMENT=staging
+      - LOG_LEVEL=info
+      - ENABLE_PROFILING=false
+
+# SecretGenerator for staging secrets
+secretGenerator:
+  - name: openclaw-secrets
+    literals:
+      - database-url=postgresql://openclaw:staging-password-change-me@staging-postgresql:5432/openclaw
+      - redis-url=redis://:staging-redis-change-me@staging-redis:6379/0
+      - postgres-password=staging-password-change-me
+      - redis-password=staging-redis-change-me
+      - litellm-master-key=staging-master-key-change-in-production
+      - litellm-salt-key=staging-salt-key-change-in-production
+      - minimax-api-key=your-minimax-api-key
+      - zai-api-key=your-zai-api-key
+    behavior: replace
+
+# Image overrides for staging
+images:
+  - name: heretek/openclaw-gateway
+    newTag: 2026.3.28
+  - name: ghcr.io/berriai/litellm
+    newTag: main-latest

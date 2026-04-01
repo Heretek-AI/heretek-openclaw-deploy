@@ -1,0 +1,156 @@
+# ==============================================================================
+# Heretek OpenClaw - LiteLLM Proxy Deployment
+# ==============================================================================
+# Base deployment configuration for LiteLLM proxy
+# ==============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm
+  namespace: openclaw
+  labels:
+    app.kubernetes.io/name: litellm
+    app.kubernetes.io/component: proxy
+    app.kubernetes.io/part-of: openclaw
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: litellm
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: litellm
+        app.kubernetes.io/component: proxy
+        app.kubernetes.io/part-of: openclaw
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: litellm
+          image: ghcr.io/berriai/litellm:main-latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - "litellm"
+            - "--config"
+            - "/app/config.yaml"
+            - "--port"
+            - "4000"
+          ports:
+            - name: http
+              containerPort: 4000
+              protocol: TCP
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: openclaw-secrets
+                  key: database-url
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: openclaw-secrets
+                  key: redis-url
+            - name: LITELLM_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: openclaw-secrets
+                  key: litellm-master-key
+                  optional: true
+            - name: LITELLM_SALT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: openclaw-secrets
+                  key: litellm-salt-key
+                  optional: true
+            - name: LANGFUSE_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: openclaw-secrets
+                  key: langfuse-public-key
+                  optional: true
+            - name: LANGFUSE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: openclaw-secrets
+                  key: langfuse-secret-key
+                  optional: true
+            - name: PROXY_COST_TRACKING
+              value: "True"
+            - name: PROXY_METRICS_ENABLED
+              value: "True"
+            - name: LITELLM_LOG_LEVEL
+              value: "INFO"
+          resources:
+            requests:
+              cpu: "1000m"
+              memory: "2Gi"
+            limits:
+              cpu: "2000m"
+              memory: "4Gi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: litellm-config
+              mountPath: /app/config.yaml
+              subPath: config.yaml
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: litellm-config
+          configMap:
+            name: litellm-config
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: litellm-config
+  namespace: openclaw
+  labels:
+    app.kubernetes.io/name: litellm
+data:
+  config.yaml: |
+    model_list:
+      - model_name: minimax
+        litellm_params:
+          model: minimax/minimax-abab6
+          api_key: os.environ/MINIMAX_API_KEY
+      - model_name: zai
+        litellm_params:
+          model: zai/glm-4
+          api_key: os.environ/ZAI_API_KEY
+      - model_name: ollama
+        litellm_params:
+          model: ollama/llama2
+          api_base: http://ollama:11434
+    litellm_settings:
+      set_verbose: true
+      drop_params: true
+      max_tokens: 4096
+      request_timeout: 600
+      num_retries: 2

@@ -1,0 +1,60 @@
+# ==============================================================================
+# Heretek OpenClaw - OpenClaw Gateway Service
+# ==============================================================================
+# Base service configuration for OpenClaw Gateway
+# ==============================================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: openclaw-gateway
+  namespace: openclaw
+  labels:
+    app.kubernetes.io/name: openclaw-gateway
+    app.kubernetes.io/component: gateway
+    app.kubernetes.io/part-of: openclaw
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 18789
+      targetPort: http
+      protocol: TCP
+    - name: ws
+      port: 18790
+      targetPort: ws
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: openclaw-gateway
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: openclaw-gateway
+  namespace: openclaw
+  labels:
+    app.kubernetes.io/name: openclaw-gateway
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/websocket-services: "openclaw-gateway"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  rules:
+    - host: openclaw.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: openclaw-gateway
+                port:
+                  number: 18789
+          - path: /ws
+            pathType: Prefix
+            backend:
+              service:
+                name: openclaw-gateway
+                port:
+                  number: 18790

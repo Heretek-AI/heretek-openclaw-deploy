@@ -1,0 +1,170 @@
+# ==============================================================================
+# Heretek OpenClaw - Production Overlay
+# ==============================================================================
+# Kustomization overlay for production environment
+# ==============================================================================
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: openclaw-prod
+
+namePrefix: prod-
+
+resources:
+  - ../../base
+
+commonLabels:
+  environment: prod
+
+# Production-specific patches
+patches:
+  # Gateway configuration for production with HA
+  - target:
+      kind: Deployment
+      name: openclaw-gateway
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "2000m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "4Gi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "4000m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "8Gi"
+
+  # Add PodDisruptionBudget for Gateway
+  - target:
+      kind: Deployment
+      name: openclaw-gateway
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: openclaw-gateway
+      spec:
+        strategy:
+          type: RollingUpdate
+          rollingUpdate:
+            maxSurge: 1
+            maxUnavailable: 0
+
+  # LiteLLM configuration for production with HA
+  - target:
+      kind: Deployment
+      name: litellm
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "1000m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "2Gi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "2000m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "4Gi"
+
+  # PostgreSQL configuration for production
+  - target:
+      kind: StatefulSet
+      name: postgresql
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "2000m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "4Gi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "4000m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "8Gi"
+
+  # Redis configuration for production
+  - target:
+      kind: StatefulSet
+      name: redis
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "500m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "512Mi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "1000m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "1Gi"
+
+# ConfigMapGenerator for production configuration
+configMapGenerator:
+  - name: openclaw-config
+    literals:
+      - ENVIRONMENT=prod
+      - LOG_LEVEL=warn
+      - ENABLE_PROFILING=false
+      - ENABLE_DEBUG=false
+
+# SecretGenerator for production secrets
+# IMPORTANT: Replace these with actual secrets from your secrets manager
+secretGenerator:
+  - name: openclaw-secrets
+    literals:
+      - database-url=postgresql://openclaw:PRODUCTION_PASSWORD_REPLACE_ME@prod-postgresql:5432/openclaw
+      - redis-url=redis://:PRODUCTION_REDIS_REPLACE_ME@prod-redis:6379/0
+      - postgres-password=PRODUCTION_PASSWORD_REPLACE_ME
+      - redis-password=PRODUCTION_REDIS_REPLACE_ME
+      - litellm-master-key=PRODUCTION_MASTER_KEY_REPLACE_ME
+      - litellm-salt-key=PRODUCTION_SALT_KEY_REPLACE_ME
+      - minimax-api-key=your-minimax-api-key
+      - zai-api-key=your-zai-api-key
+    behavior: replace
+
+# Image overrides for production
+images:
+  - name: heretek/openclaw-gateway
+    newTag: 2026.3.28
+    digest: sha256:replace-with-actual-digest
+  - name: ghcr.io/berriai/litellm
+    newTag: main-v1.0.0
+    digest: sha256:replace-with-actual-digest
+
+# Production-specific additional resources
+patchesStrategicMerge:
+  - |-
+    apiVersion: policy/v1
+    kind: PodDisruptionBudget
+    metadata:
+      name: openclaw-gateway-pdb
+    spec:
+      minAvailable: 2
+      selector:
+        matchLabels:
+          app.kubernetes.io/name: openclaw-gateway
+  - |-
+    apiVersion: policy/v1
+    kind: PodDisruptionBudget
+    metadata:
+      name: litellm-pdb
+    spec:
+      minAvailable: 2
+      selector:
+        matchLabels:
+          app.kubernetes.io/name: litellm

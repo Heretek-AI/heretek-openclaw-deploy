@@ -1,0 +1,145 @@
+# ==============================================================================
+# Heretek OpenClaw - OpenClaw Gateway Deployment
+# ==============================================================================
+# Base deployment configuration for OpenClaw Gateway
+# ==============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openclaw-gateway
+  namespace: openclaw
+  labels:
+    app.kubernetes.io/name: openclaw-gateway
+    app.kubernetes.io/component: gateway
+    app.kubernetes.io/part-of: openclaw
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: openclaw-gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: openclaw-gateway
+        app.kubernetes.io/component: gateway
+        app.kubernetes.io/part-of: openclaw
+    spec:
+      serviceAccountName: openclaw
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: gateway
+          image: heretek/openclaw-gateway:2026.3.28
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 18789
+              protocol: TCP
+            - name: ws
+              containerPort: 18790
+              protocol: TCP
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: PORT
+              value: "18789"
+            - name: OPENCLAW_DIR
+              value: "/app/.openclaw"
+            - name: LITELLM_URL
+              value: "http://litellm:4000"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: openclaw-secrets
+                  key: database-url
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: openclaw-secrets
+                  key: redis-url
+            - name: MINIMAX_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: openclaw-secrets
+                  key: minimax-api-key
+                  optional: true
+            - name: ZAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: openclaw-secrets
+                  key: zai-api-key
+                  optional: true
+          resources:
+            requests:
+              cpu: "2000m"
+              memory: "4Gi"
+            limits:
+              cpu: "4000m"
+              memory: "8Gi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: openclaw-data
+              mountPath: /app/.openclaw
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: openclaw-data
+          persistentVolumeClaim:
+            claimName: openclaw-data-pvc
+        - name: tmp
+          emptyDir: {}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: openclaw-gateway
+                topologyKey: kubernetes.io/hostname
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: openclaw-data-pvc
+  namespace: openclaw
+  labels:
+    app.kubernetes.io/name: openclaw-gateway
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: openclaw
+  namespace: openclaw
+  labels:
+    app.kubernetes.io/name: openclaw-gateway

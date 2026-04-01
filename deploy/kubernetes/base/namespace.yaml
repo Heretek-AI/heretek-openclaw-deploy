@@ -1,0 +1,15 @@
+# ==============================================================================
+# Heretek OpenClaw - Kubernetes Namespace
+# ==============================================================================
+# Base namespace configuration for OpenClaw deployment
+# ==============================================================================
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openclaw
+  labels:
+    app.kubernetes.io/name: openclaw
+    app.kubernetes.io/part-of: openclaw
+    app.kubernetes.io/managed-by: kustomize
+    name: openclaw
