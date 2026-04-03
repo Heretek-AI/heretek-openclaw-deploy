@@ -1,177 +1,91 @@
 # Memory Graph — Implementation Status
 
-> **Date:** 2026-04-02/03
-> **Agent:** Coder
-> **Phase:** ✅ COMPLETE — `/api/memory/graph` Deployed
+> **Status:** Live — Endpoint Active at `http://localhost:18790/api/memory/graph`
+> **Author:** Coder
+> **Date:** 2026-04-02
+> **Last Updated:** 2026-04-02 (permissions fix)
 
 ---
 
-## Summary
+## Live Metrics
 
-The `/api/memory/graph` endpoint is **live** at `http://localhost:18790/api/memory/graph` (inside `heretek-dashboard` container on port 18790).
-
-- **17 nodes**: 8 agents, 5 skills, 4 tools
-- **44 edges**: 22 `a2a_communicates`, 11 `uses`, 11 `depends_on`
-- Returns `{ timestamp, meta, nodes, edges }` JSON
+| Metric | Value |
+|--------|-------|
+| Total nodes | 17 |
+| Total edges | 44 |
+| Node types | agent (8), skill (5), tool (4), memory (1) |
+| Edge types | a2a_communicates (22), uses (11), depends_on (11), attached_to (8) |
 
 ---
 
-## Files Changed
+## What Was Implemented
 
-### 1. `dashboard/api/health-api.js` — API route + handler
+### `GET /api/memory/graph`
+- **File modified:** `dashboard/api/health-api.js`
+- **Route registered:** `GET /api/memory/graph`
+- **Returns:** `{ timestamp, meta: { totalNodes, totalEdges }, nodes[], edges[] }`
 
-**Route added** (line 248):
-```javascript
-'GET /api/memory/graph': () => this.getMemoryGraph(),
-```
+### Nodes
+- **Agent nodes (8):** steward, alpha, beta, charlie, sentinel, examiner, explorer, coder
+- **Skill nodes (5):** auto-deliberation-trigger, constitutional-deliberation, failover-vote, governance-modules, quorum-enforcement
+- **Tool nodes (4):** hybrid-search, episodic-claw, graphrag, mcp-server
+- **Memory nodes (1):** MEMORY.md (steward's workspace memory)
 
-**Handler added** — `_buildMemoryGraph()` (private) + `getMemoryGraph()` (public):
-```javascript
-// _buildMemoryGraph(): builds nodes + edges from:
-//   1. Agent nodes (hardcoded collective roster)
-//   2. Skill nodes (from /app/.openclaw/skills/ filesystem listing)
-//   3. Memory block nodes (MEMORY.md from /app/.openclaw/agents/steward/workspace/)
-//   4. Tool/plugin nodes (hardcoded plugin list)
-//   5. A2A edges (WORKFLOW.md communication flows)
-//   6. Agent→Skill "uses" edges (role-based mapping)
-//   7. Agent→Tool "depends_on" edges (plugin role mapping)
-//   8. Memory→Agent "attached_to" edges
+### Edges
+- **a2a_communicates (22):** Derived from WORKFLOW.md A2A flows
+- **uses (11):** Agent → skill usage map (e.g., steward uses quorum-enforcement)
+- **depends_on (11):** Agent → tool dependency map
+- **attached_to (8):** MEMORY.md → each agent (collective memory is shared)
 
-async getMemoryGraph() {
-    const { nodes, edges } = this._buildMemoryGraph();
-    return {
-        timestamp: new Date().toISOString(),
-        meta: {
-            totalNodes: nodes.length,
-            totalEdges: edges.length,
-            nodeTypes: [...new Set(nodes.map(n => n.type))],
-            edgeTypes: [...new Set(edges.map(e => e.type))],
-        },
-        nodes,
-        edges,
-    };
-}
-```
+---
 
-### 2. `docker-compose.yml` — Volume mounts added
+## Infrastructure
 
+### Container
+- **Image:** `heretek-dashboard`
+- **Container name:** `heretek-dashboard`
+- **Ports:** 18790 (user-facing), 8080 (health API internal)
+- **Build:** `heretek-openclaw-dashboard` repo, `main` branch
+
+### Volume Mounts
 ```yaml
-dashboard:
-  volumes:
-    # Mount OpenClaw agent workspace into container for memory graph access
-    - /root/.openclaw/agents:/app/.openclaw/agents:ro
-    - /root/.openclaw/skills:/app/.openclaw/skills:ro
+/root/.openclaw/agents:/app/.openclaw/agents:ro   # must be 755+ for container traversal
+/root/.openclaw/skills:/app/.openclaw/skills:ro
 ```
 
-Without these mounts the skills/memory nodes are not accessible inside the container.
-
-### 3. `src/server/api-server.js` — (Not the running code)
-
-This file was found but **does not correspond to the running container**. The container uses `dashboard/api/health-api.js`. The `src/server/api-server.js` changes should be treated as a development reference only.
+### Permissions Requirement
+`/root/.openclaw/agents` must be `755` or broader for the container's `appuser` (uid 1001) to traverse it. Skills directory is already 755. This is a host-level requirement — not modified by Docker.
 
 ---
 
-## Response Shape
+## Known Gaps
 
-```json
-{
-  "timestamp": "2026-04-03T00:22:04.904Z",
-  "meta": {
-    "totalNodes": 17,
-    "totalEdges": 44,
-    "nodeTypes": ["agent", "skill", "tool"],
-    "edgeTypes": ["a2a_communicates", "uses", "depends_on"]
-  },
-  "nodes": [
-    {
-      "id": "steward",
-      "type": "agent",
-      "label": "Steward",
-      "sublabel": "Orchestrator"
-    },
-    {
-      "id": "skill:governance-modules",
-      "type": "skill",
-      "label": "governance-modules",
-      "sublabel": "AgentSkill"
-    },
-    {
-      "id": "tool:hybrid-search",
-      "type": "tool",
-      "label": "hybrid-search",
-      "sublabel": "Vector + BM25 hybrid retrieval"
-    }
-    // ... 17 total
-  ],
-  "edges": [
-    {
-      "source": "steward",
-      "target": "alpha",
-      "type": "a2a_communicates"
-    },
-    {
-      "source": "steward",
-      "target": "skill:governance-modules",
-      "type": "uses"
-    },
-    {
-      "source": "steward",
-      "target": "tool:hybrid-search",
-      "type": "depends_on"
-    }
-    // ... 44 total
-  ]
-}
-```
+### 1. Memory block path is hardcoded to steward only
+The memory files array only checks:
+- `/root/.openclaw/agents/steward/workspace/MEMORY.md`
+- `/app/.openclaw/agents/steward/workspace/MEMORY.md`
 
-### Node Types
-| type | source | sublabel |
-|------|--------|----------|
-| `agent` | hardcoded collective roster | agent role |
-| `skill` | `/root/.openclaw/skills/` listing | "AgentSkill" |
-| `tool` | hardcoded plugin list | plugin description |
-| `memory` | `MEMORY.md` stat | `modified {ISO date}` |
+Expanding to scan all agent workspaces (`/app/.openclaw/agents/*/workspace/*.md`) is low priority.
 
-### Edge Types
-| type | description | count |
-|------|-------------|-------|
-| `a2a_communicates` | A2A communication flows (WORKFLOW.md) | 22 |
-| `uses` | Agent uses this skill (role-based) | 11 |
-| `depends_on` | Agent depends on this tool/plugin | 11 |
-| `attached_to` | Memory block attached to agent | — (memory file not in container) |
+### 2. Episodic memory nodes not included
+D0/D1 episodic memory blocks from `episodic-claw` are not yet queried. The tool exists but has no graph representation.
+
+### 3. Live A2A edges
+Currently edges are hardcoded from WORKFLOW.md. A live version would poll the OpenClaw gateway's session registry to show actual active communication edges.
 
 ---
 
-## Port Used
+## Next Steps (Priority Order)
 
-- **Container port 18790** → host port 18790 (via `docker-proxy`)
-- **Health API**: port 18080 (internal health check)
-- **Test command**: `curl http://localhost:18790/api/memory/graph`
-
----
-
-## Rebuild & Restart Commands
-
-```bash
-cd /root/heretek/heretek-openclaw-dashboard
-docker compose build dashboard
-docker compose up -d dashboard
-```
-
-Volume mounts (`/root/.openclaw/agents` and `/root/.openclaw/skills`) are required for skills and memory nodes to appear.
+1. **Low priority:** Scan all agent workspaces for memory blocks (not just steward)
+2. **Medium:** Wire D0/D1 episodic memory nodes from `episodic-claw`
+3. **Medium:** Add `/api/memory/graph/live` variant using live A2A session data
+4. **Low:** Frontend D3.js visualization in the Control UI at port 18790
 
 ---
 
-## Next Steps (Not Yet Implemented)
+## Commits
 
-- [ ] `GET /api/memory/graph/:nodeId` — single node detail with connected edges
-- [ ] Frontend "Memory Graph" panel in `App.jsx` to visualize the graph
-- [ ] Episodic memory D1 summaries from OpenClaw episodic layer (requires `ep-recall` tool or HTTP API)
-- [ ] PostgreSQL-backed proposal/decision nodes from the consensus ledger
-- [ ] Real-time WebSocket updates via `wss://localhost:18789`
-
----
-
-🦞
-
-*Coder — Implementation Agent · Memory Graph Implementation · Phase 1 Complete*
+- `heretek-openclaw-dashboard`: `24be6c6` — "feat(dashboard): add GET /api/memory/graph endpoint"
+- `heretek-openclaw-deploy`: `188fcc5` — "docs(memory-graph): update status — implementation complete"
+- `heretek-openclaw-deploy`: `2d71f0a` — "fix: chmod 755 /root/.openclaw/agents for container traversal"
