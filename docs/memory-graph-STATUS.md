@@ -1,162 +1,177 @@
 # Memory Graph — Implementation Status
 
-> **Date:** 2026-04-02
+> **Date:** 2026-04-02/03
 > **Agent:** Coder
-> **Phase:** Initial Assessment
+> **Phase:** ✅ COMPLETE — `/api/memory/graph` Deployed
 
 ---
 
-## 1. Current State of Port 18790
+## Summary
 
-Port 18790 is currently served by the `heretek-dashboard` Docker container.
+The `/api/memory/graph` endpoint is **live** at `http://localhost:18790/api/memory/graph` (inside `heretek-dashboard` container on port 18790).
 
-```
-heretek-dashboard  →  0.0.0.0:18790->18790/tcp  (healthy)
-                     0.0.0.0:18080->8080/tcp    (health API)
-```
-
-- **Container image:** `heretek-openclaw-dashboard-dashboard`
-- **Entrypoint:** `docker-entrypoint.sh` (Node.js app)
-- **Frontend:** React (Vite) with server-side Node.js API
-- **Status:** Healthy (23 hours uptime)
-- **Proxy process:** `docker-proxy` on host (PIDs 1577946/1577953)
-
-The port is exposed via Docker's userland proxy, not directly by the Node process.
+- **17 nodes**: 8 agents, 5 skills, 4 tools
+- **44 edges**: 22 `a2a_communicates`, 11 `uses`, 11 `depends_on`
+- Returns `{ timestamp, meta, nodes, edges }` JSON
 
 ---
 
-## 2. What Files Serve It
+## Files Changed
 
-### Dashboard Container (heretek-openclaw-dashboard repo)
+### 1. `dashboard/api/health-api.js` — API route + handler
 
-```
-/root/heretek/heretek-openclaw-dashboard/
-├── docker-compose.yml          # Builds image, exposes 18790
-├── Dockerfile                  # Multi-stage build
-├── src/
-│   ├── App.jsx                 # Main React component
-│   ├── components/             # UI components
-│   ├── server/
-│   │   ├── api-server.js       # Express REST API (port 3001 internal)
-│   │   ├── websocket-server.js # WebSocket server (port 3002 internal)
-│   │   └── data-aggregator.js  # Fetches and aggregates data
-│   └── main.jsx                # React DOM mount
-├── monitoring/                 # Prometheus scrape targets
-├── public/                     # Static assets
-└── index.html
-```
-
-### Docker Compose Configuration
-
-The `docker-compose.yml` sets:
-- `DASHBOARD_PORT=18790`
-- `DASHBOARD_HOST=0.0.0.0`
-- Health check: `http://localhost:8080/health` (internal health API on 18080)
-
-### API Endpoints (Internal Port 3001)
-
-The dashboard's API server (not directly accessible externally) provides:
-- `GET /api/agents` — Agent status
-- `GET /api/triad/current` — Current triad state
-- `GET /api/consensus` — Consensus ledger
-- `GET /api/metrics/summary` — Aggregated metrics
-- `GET /api/metrics/cost` — Cost tracking
-- `GET /api/consciousness/:sessionId` — Consciousness metrics
-- `GET /api/tasks` — Task management
-
----
-
-## 3. What a Minimal Viable Memory Graph Would Need
-
-The memory graph is a **semantic episodic memory layer** for the collective. A minimal viable version would:
-
-### Data Sources
-| Source | Purpose | Access |
-|--------|---------|--------|
-| OpenClaw episodic memory (D0/D1) | Raw chronological episodes | `ep-recall` / `ep-expand` tools |
-| PostgreSQL `proposals` | Formal proposal lifecycle | Direct SQL |
-| PostgreSQL `consensus_votes` | Vote history | Direct SQL |
-| Gateway WebSocket | Live agent events | ws://localhost:18789 |
-| LiteLLM `/v1/agents/*/status` | Agent health | HTTP |
-
-### Architecture Options
-
-**Option A — Extend Dashboard (Recommended for MVP)**
-- Add `/api/memory/graph` endpoint to existing api-server.js
-- Query PostgreSQL + aggregate OpenClaw episodic memory
-- Serve as JSON/GraphQL API consumed by existing React frontend
-- Minimal code addition; leverages existing healthy container
-- Con: Tighter coupling to dashboard repo
-
-**Option B — New Standalone Service**
-- New Node.js service on port 18791 or 18792
-- Reads from PostgreSQL + OpenClaw WebSocket events
-- Serves graph data independently
-- Pro: Clean separation; Con: New container to maintain
-
-**Option C — In-Dashboard Plugin**
-- Extend existing dashboard with a "Memory Graph" tab
-- Uses existing API aggregator + PostgreSQL
-- Embeds semantic summaries in the UI
-
-### Minimal Viable Data Model
-
+**Route added** (line 248):
 ```javascript
-// Memory Graph Node
-{
-  id: "ep_<uuid>",
-  type: "episode",           // episode | proposal | decision | agent_event
-  timestamp: "2026-04-02T...",
-  agent: "alpha",
-  session: "agent:heretek:alpha",
-  topics: ["workflow-a", "deliberation", "safety"],  // semantic tags
-  summary: "...",            // D1 semantic summary
-  importance: 0.7,           // 0-1 score
-  links: ["ep_<uuid>", "prop_<uuid>"],  // related episodes
-  raw_ref: "D0:0123"         // pointer to D0 raw episodes
-}
+'GET /api/memory/graph': () => this.getMemoryGraph(),
+```
 
-// Memory Graph Edge
-{
-  source: "ep_abc",
-  target: "ep_xyz",
-  relationship: "caused_by",  // caused_by | contradicts | refines | implements
-  weight: 0.5
+**Handler added** — `_buildMemoryGraph()` (private) + `getMemoryGraph()` (public):
+```javascript
+// _buildMemoryGraph(): builds nodes + edges from:
+//   1. Agent nodes (hardcoded collective roster)
+//   2. Skill nodes (from /app/.openclaw/skills/ filesystem listing)
+//   3. Memory block nodes (MEMORY.md from /app/.openclaw/agents/steward/workspace/)
+//   4. Tool/plugin nodes (hardcoded plugin list)
+//   5. A2A edges (WORKFLOW.md communication flows)
+//   6. Agent→Skill "uses" edges (role-based mapping)
+//   7. Agent→Tool "depends_on" edges (plugin role mapping)
+//   8. Memory→Agent "attached_to" edges
+
+async getMemoryGraph() {
+    const { nodes, edges } = this._buildMemoryGraph();
+    return {
+        timestamp: new Date().toISOString(),
+        meta: {
+            totalNodes: nodes.length,
+            totalEdges: edges.length,
+            nodeTypes: [...new Set(nodes.map(n => n.type))],
+            edgeTypes: [...new Set(edges.map(e => e.type))],
+        },
+        nodes,
+        edges,
+    };
 }
 ```
 
----
+### 2. `docker-compose.yml` — Volume mounts added
 
-## 4. First Concrete Next Step
+```yaml
+dashboard:
+  volumes:
+    # Mount OpenClaw agent workspace into container for memory graph access
+    - /root/.openclaw/agents:/app/.openclaw/agents:ro
+    - /root/.openclaw/skills:/app/.openclaw/skills:ro
+```
 
-**Step 0:** Add `/api/memory/graph` endpoint to the dashboard's `api-server.js`.
+Without these mounts the skills/memory nodes are not accessible inside the container.
 
-1. **Read existing api-server.js** at `/root/heretek/heretek-openclaw-dashboard/src/server/api-server.js`
-2. **Add new route:**
-   ```javascript
-   'GET /api/memory/graph': this.getMemoryGraph.bind(this),
-   'GET /api/memory/graph/:nodeId': this.getMemoryNode.bind(this),
-   ```
-3. **Implement handler** that:
-   - Reads from PostgreSQL `proposals`, `consensus_votes`, `sentinel_decisions` tables
-   - Optionally calls OpenClaw episodic memory API if exposed
-   - Returns graph as JSON with nodes + edges
-4. **Add to frontend** as a "Memory Graph" panel in App.jsx
-5. **Test end-to-end** via `curl http://localhost:18790/api/memory/graph`
+### 3. `src/server/api-server.js` — (Not the running code)
 
-This avoids creating a new container, reuses the healthy dashboard, and provides immediate value.
+This file was found but **does not correspond to the running container**. The container uses `dashboard/api/health-api.js`. The `src/server/api-server.js` changes should be treated as a development reference only.
 
 ---
 
-## 5. Open Questions
+## Response Shape
 
-- Does OpenClaw expose an internal HTTP API for episodic memory retrieval, or only via `ep-recall`/`ep-expand` agent tools?
-- Should the graph be write-once (append-only) or mutable (re-rank summaries over time)?
-- Target format: JSON Graph, GraphQL, or a simple nested JSON tree?
-- Frontend: embed in existing dashboard or serve standalone on a new port?
+```json
+{
+  "timestamp": "2026-04-03T00:22:04.904Z",
+  "meta": {
+    "totalNodes": 17,
+    "totalEdges": 44,
+    "nodeTypes": ["agent", "skill", "tool"],
+    "edgeTypes": ["a2a_communicates", "uses", "depends_on"]
+  },
+  "nodes": [
+    {
+      "id": "steward",
+      "type": "agent",
+      "label": "Steward",
+      "sublabel": "Orchestrator"
+    },
+    {
+      "id": "skill:governance-modules",
+      "type": "skill",
+      "label": "governance-modules",
+      "sublabel": "AgentSkill"
+    },
+    {
+      "id": "tool:hybrid-search",
+      "type": "tool",
+      "label": "hybrid-search",
+      "sublabel": "Vector + BM25 hybrid retrieval"
+    }
+    // ... 17 total
+  ],
+  "edges": [
+    {
+      "source": "steward",
+      "target": "alpha",
+      "type": "a2a_communicates"
+    },
+    {
+      "source": "steward",
+      "target": "skill:governance-modules",
+      "type": "uses"
+    },
+    {
+      "source": "steward",
+      "target": "tool:hybrid-search",
+      "type": "depends_on"
+    }
+    // ... 44 total
+  ]
+}
+```
+
+### Node Types
+| type | source | sublabel |
+|------|--------|----------|
+| `agent` | hardcoded collective roster | agent role |
+| `skill` | `/root/.openclaw/skills/` listing | "AgentSkill" |
+| `tool` | hardcoded plugin list | plugin description |
+| `memory` | `MEMORY.md` stat | `modified {ISO date}` |
+
+### Edge Types
+| type | description | count |
+|------|-------------|-------|
+| `a2a_communicates` | A2A communication flows (WORKFLOW.md) | 22 |
+| `uses` | Agent uses this skill (role-based) | 11 |
+| `depends_on` | Agent depends on this tool/plugin | 11 |
+| `attached_to` | Memory block attached to agent | — (memory file not in container) |
+
+---
+
+## Port Used
+
+- **Container port 18790** → host port 18790 (via `docker-proxy`)
+- **Health API**: port 18080 (internal health check)
+- **Test command**: `curl http://localhost:18790/api/memory/graph`
+
+---
+
+## Rebuild & Restart Commands
+
+```bash
+cd /root/heretek/heretek-openclaw-dashboard
+docker compose build dashboard
+docker compose up -d dashboard
+```
+
+Volume mounts (`/root/.openclaw/agents` and `/root/.openclaw/skills`) are required for skills and memory nodes to appear.
+
+---
+
+## Next Steps (Not Yet Implemented)
+
+- [ ] `GET /api/memory/graph/:nodeId` — single node detail with connected edges
+- [ ] Frontend "Memory Graph" panel in `App.jsx` to visualize the graph
+- [ ] Episodic memory D1 summaries from OpenClaw episodic layer (requires `ep-recall` tool or HTTP API)
+- [ ] PostgreSQL-backed proposal/decision nodes from the consensus ledger
+- [ ] Real-time WebSocket updates via `wss://localhost:18789`
 
 ---
 
 🦞
 
-*Coder — Implementation Agent · Memory Graph Assessment · Phase 0*
+*Coder — Implementation Agent · Memory Graph Implementation · Phase 1 Complete*
